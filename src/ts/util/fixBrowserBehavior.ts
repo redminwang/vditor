@@ -18,6 +18,7 @@ import {
 import {getLastNode} from "./hasClosest";
 import {highlightToolbar} from "./highlightToolbar";
 import {matchHotKey} from "./hotKey";
+import {pasteIntoTable} from "./pasteIntoTable";
 import {processCodeRender, processPasteCode} from "./processCode";
 import {
     getEditorRange,
@@ -1415,18 +1416,35 @@ export const paste = async (vditor: IVditor, event: (ClipboardEvent | DragEvent)
             tempElement.querySelectorAll(".vditor-copy").forEach((e) => {
                 e.remove();
             });
-            if (vditor.currentMode === "ir") {
-                renderers.HTML2VditorIRDOM = {renderLinkDest};
-                vditor.lute.SetJSRenderers({renderers});
-                insertHTML(vditor.lute.HTML2VditorIRDOM(tempElement.innerHTML), vditor);
-            } else if (vditor.currentMode === "wysiwyg") {
-                renderers.HTML2VditorDOM = {renderLinkDest};
-                vditor.lute.SetJSRenderers({renderers});
-                insertHTML(vditor.lute.HTML2VditorDOM(tempElement.innerHTML), vditor);
-            } else {
-                renderers.Md2VditorSVDOM = {renderLinkDest};
-                vditor.lute.SetJSRenderers({renderers});
-                processPaste(vditor, vditor.lute.HTML2Md(tempElement.innerHTML).trimRight());
+            let handledByCell = false;
+            if (vditor.currentMode !== "sv" && tempElement.querySelector("table")) {
+                const pasteRange = getEditorRange(vditor);
+                const startCell = (hasClosestByMatchTag(pasteRange.startContainer, "TD")
+                    || hasClosestByMatchTag(pasteRange.startContainer, "TH")) as HTMLTableCellElement | false;
+                const endCell = pasteRange.collapsed ? startCell :
+                    (hasClosestByMatchTag(pasteRange.endContainer, "TD")
+                        || hasClosestByMatchTag(pasteRange.endContainer, "TH")) as HTMLTableCellElement | false;
+                if (startCell && startCell === endCell) {
+                    if (!pasteRange.collapsed) {
+                        pasteRange.deleteContents();
+                    }
+                    handledByCell = pasteIntoTable(vditor, startCell, tempElement);
+                }
+            }
+            if (!handledByCell) {
+                if (vditor.currentMode === "ir") {
+                    renderers.HTML2VditorIRDOM = {renderLinkDest};
+                    vditor.lute.SetJSRenderers({renderers});
+                    insertHTML(vditor.lute.HTML2VditorIRDOM(tempElement.innerHTML), vditor);
+                } else if (vditor.currentMode === "wysiwyg") {
+                    renderers.HTML2VditorDOM = {renderLinkDest};
+                    vditor.lute.SetJSRenderers({renderers});
+                    insertHTML(vditor.lute.HTML2VditorDOM(tempElement.innerHTML), vditor);
+                } else {
+                    renderers.Md2VditorSVDOM = {renderLinkDest};
+                    vditor.lute.SetJSRenderers({renderers});
+                    processPaste(vditor, vditor.lute.HTML2Md(tempElement.innerHTML).trimRight());
+                }
             }
             vditor.outline.render(vditor);
         } else if (files.length > 0) {

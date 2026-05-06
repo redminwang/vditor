@@ -2,6 +2,8 @@
 
 ### 升级
 
+* 3.12 (fork: fix/issue-905-table-paste)
+  * 修复 #905: 跨单元格复制粘贴
 * 3.11
   * 添加 options.preview.markdown.sup
   * 添加 options.preview.markdown.sub
