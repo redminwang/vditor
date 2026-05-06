@@ -182,3 +182,72 @@ export const buildTableFragmentFromMatrix = (matrix: string[][]): HTMLElement =>
     fragment.innerHTML = `<table><tbody>${rowsHtml}</tbody></table>`;
     return fragment;
 };
+
+// https://github.com/Vanessa219/vditor/issues/905
+// vditor's copy handler runs Lute.VditorDOM2Md on cloned-range HTML; for a
+// partial selection of cells (e.g. just three <th>s without a wrapping
+// <table><tr>) Lute can't recognize it as a table and emits plain
+// concatenated text. The result is that vditor->vditor copy/paste of a row
+// or rectangular cell block lands as a single text run in one cell.
+//
+// This helper inspects the live selection and, when both ends are inside
+// cells of the same table, returns a clean clipboard payload:
+//   - html: a synthesized <table><tbody><tr>...</tr></tbody></table>
+//           covering the rectangular cell range (used by vditor->vditor
+//           paste path, which routes through pasteIntoTable on text/html).
+//   - plain: pipe-bounded markdown rows (used by external paste targets,
+//           and as a defense-in-depth fallback for our textPlain branch).
+// Returns null when the selection is not a multi-cell table selection,
+// letting the generic copy path keep its current behaviour.
+export const buildTableSelectionClipboard = (
+    range: Range,
+): {html: string; plain: string} | null => {
+    const startCell = (hasClosestByMatchTag(range.startContainer, "TD")
+        || hasClosestByMatchTag(range.startContainer, "TH")) as HTMLTableCellElement | false;
+    const endCell = (hasClosestByMatchTag(range.endContainer, "TD")
+        || hasClosestByMatchTag(range.endContainer, "TH")) as HTMLTableCellElement | false;
+    if (!startCell || !endCell) {
+        return null;
+    }
+    const startTable = hasClosestByMatchTag(startCell, "TABLE") as HTMLTableElement;
+    const endTable = hasClosestByMatchTag(endCell, "TABLE") as HTMLTableElement;
+    if (!startTable || startTable !== endTable) {
+        return null;
+    }
+    // A range fully inside a single cell is just rich-text selection — let the
+    // generic copy path serialize it as inline markdown.
+    if (startCell === endCell) {
+        return null;
+    }
+
+    const sp = findCellPosition(startCell, startTable);
+    const ep = findCellPosition(endCell, startTable);
+    if (!sp || !ep) {
+        return null;
+    }
+
+    const r0 = Math.min(sp.row, ep.row);
+    const r1 = Math.max(sp.row, ep.row);
+    const c0 = Math.min(sp.col, ep.col);
+    const c1 = Math.max(sp.col, ep.col);
+
+    let html = "<table><tbody>";
+    const plainRows: string[] = [];
+    for (let r = r0; r <= r1; r++) {
+        html += "<tr>";
+        const plainCells: string[] = [];
+        const row = startTable.rows[r];
+        for (let c = c0; c <= c1; c++) {
+            const cell = row && row.cells[c];
+            const inner = cell ? cell.innerHTML.trim() : "";
+            const text = cell ? cell.textContent.trim().replace(/\|/g, "\\|") : "";
+            html += `<td>${inner}</td>`;
+            plainCells.push(text);
+        }
+        html += "</tr>";
+        plainRows.push("| " + plainCells.join(" | ") + " |");
+    }
+    html += "</tbody></table>";
+
+    return {html, plain: plainRows.join("\n")};
+};
