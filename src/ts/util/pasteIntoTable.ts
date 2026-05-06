@@ -75,6 +75,28 @@ export const pasteIntoTable = (
     const editorElement = vditor[vditor.currentMode].element;
     editorElement.querySelectorAll("wbr").forEach((wbr) => wbr.remove());
 
+    // Lute normalizes markdown tables to the header row's width on the next
+    // SpinVditorDOM pass, so any column we append past that width is silently
+    // trimmed. Pre-grow every existing row (header and body) to the final
+    // width before filling, using <th> for the header row to keep <thead>
+    // consistent.
+    const maxRowWidth = matrix.reduce((m, row) => Math.max(m, row.length), 0);
+    const finalWidth = Math.max(
+        ...Array.from(targetTable.rows, (r) => r.cells.length),
+        start.col + maxRowWidth,
+    );
+    for (let i = 0; i < targetTable.rows.length; i++) {
+        const row = targetTable.rows[i];
+        const isHeaderRow = !!hasClosestByMatchTag(row, "THEAD");
+        while (row.cells.length < finalWidth) {
+            if (isHeaderRow) {
+                row.appendChild(document.createElement("th"));
+            } else {
+                row.insertCell(-1);
+            }
+        }
+    }
+
     let lastFilledCell: HTMLTableCellElement | null = null;
     for (let r = 0; r < matrix.length; r++) {
         const rowIndex = start.row + r;
