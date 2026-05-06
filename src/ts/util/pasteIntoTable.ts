@@ -129,3 +129,56 @@ export const pasteIntoTable = (
 
     return true;
 };
+
+// Vditor's wysiwyg.copy() clears text/html and only emits a markdown form on
+// the clipboard. When the markdown is just a row fragment (no header+separator
+// pair) Lute's Md2VditorDOM doesn't recognize it as a table, so the textPlain
+// paste branch needs to detect the row fragment itself. Splits on pipes,
+// drops the optional alignment separator line, returns null if nothing
+// looked table-shaped. Trims surrounding whitespace per cell.
+export const parseMarkdownTableRows = (text: string): string[][] | null => {
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    if (lines.length === 0) {
+        return null;
+    }
+    const matrix: string[][] = [];
+    for (const line of lines) {
+        // Real markdown table rows are pipe-bounded: "| a | b | c |".
+        // Refusing unbounded text protects against false positives like shell
+        // pipes ("cmd | grep foo"), inline code, or natural sentences that
+        // happen to contain a single "|".
+        if (!/^\|.*\|$/.test(line)) {
+            return null;
+        }
+        // Skip the alignment separator line, e.g. |---|:--:|---|
+        if (/^\|[\s\-:|]+\|$/.test(line)) {
+            continue;
+        }
+        const cells = line.slice(1, -1).split("|").map((c) => c.trim());
+        if (cells.length === 0) {
+            return null;
+        }
+        matrix.push(cells);
+    }
+    return matrix.length > 0 ? matrix : null;
+};
+
+const escapeHtml = (s: string): string =>
+    s.replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+export const buildTableFragmentFromMatrix = (matrix: string[][]): HTMLElement => {
+    const fragment = document.createElement("div");
+    const rowsHtml = matrix
+        .map(
+            (row) =>
+                "<tr>" +
+                row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("") +
+                "</tr>"
+        )
+        .join("");
+    fragment.innerHTML = `<table><tbody>${rowsHtml}</tbody></table>`;
+    return fragment;
+};
